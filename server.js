@@ -13,8 +13,8 @@ const app = express();
 // Middleware
 app.use(  cors({
     origin: [
-      "https://desvisa.onrender.com", // frontend
-      "http://localhost:5173"        // local dev
+      process.env.FRONTEND_URL,        // local dev
+         // frontend
     ],
     credentials: true
   })
