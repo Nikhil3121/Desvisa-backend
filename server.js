@@ -7,8 +7,16 @@ import productRoutes from "./routes/productRoute.js";
 
 dotenv.config();
 connectDB();
-
 const app = express();
+
+// server.js
+app.use(
+  cors({
+    origin: true,
+    credentials: true
+  })
+);
+
 
 /* =========================
    ✅ CORS CONFIG (FINAL)
