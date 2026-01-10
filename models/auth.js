@@ -1,33 +1,56 @@
-import express from "express";
-import User from "../models/User.js";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
-const router = express.Router();
+const authSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+      index: true,
+    },
 
-/* SIGNUP */
-router.post("/signup", async (req, res) => {
-  const { email, password } = req.body;
+    authProvider: {
+      type: String,
+      enum: ["firebase", "local"],
+      default: "firebase",
+      required: true,
+    },
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = await User.create({ email, password: hashedPassword });
+    firebaseUid: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
 
-  res.json({ message: "User created" });
-});
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
 
-/* LOGIN */
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
 
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).json({ message: "User not found" });
+    lastAuthAt: {
+      type: Date,
+    },
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(400).json({ message: "Invalid password" });
+    authVersion: {
+      type: Number,
+      default: 1,
+    },
+    firebaseUid: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-
-  res.json({ message: "Login successful", token });
-});
-
-export default router;
+const Auth = mongoose.model("Auth", authSchema);
+export default Auth;

@@ -1,63 +1,33 @@
+import upload from "../middleware/uploadMiddleware.js";
+import Product from "../models/productModel.js";
 
-import multer from "multer";
-import upload from "../middileware/uploadMiddleware.js";
-import { Product } from "../models/productModel.js";
+
 /* =========================
-   CREATE PRODUCT
-   ========================= */
-export const createProduct = async (req, res) => {
-  try {
-    const { name, description, price, category, stock } = req.body;
-
-    if (!name || !description || !price || !category) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
-      });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Product image is required",
-      });
-    }
-
-    const product = await Product.create({
-      name,
-      description,
-      price,
-      category,
-      stock,
-      image: req.file.path, // Cloudinary image URL
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Product created successfully",
-      product,
-    });
-  } catch (error) {
-    console.error("Create Product Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
+   GET ALL PRODUCTS (USER)
+========================= */
 export const getAllProducts = async (req, res) => {
   try {
-    const { category, search } = req.query;
+    const {
+      category,
+      search,
+      minPrice,
+      maxPrice,
+      sort = "latest",
+      page = 1,
+      limit = 12,
+    } = req.query;
 
-    const filter = {};
+    const filter = { isActive: true };
 
-    // Category filter
+    /* ================= CATEGORY ================= */
     if (category) {
-      filter.category = category;
+      filter.category = {
+        $regex: `^${category}$`,
+        $options: "i",
+      };
     }
 
-    // Search filter (name + description)
+    /* ================= SEARCH ================= */
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -65,11 +35,38 @@ export const getAllProducts = async (req, res) => {
       ];
     }
 
-    const products = await Product.find(filter).sort({ createdAt: -1 });
+    /* ================= PRICE FILTER ================= */
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    /* ================= SORT ================= */
+    let sortQuery = { createdAt: -1 };
+    if (sort === "price_low") sortQuery = { price: 1 };
+    if (sort === "price_high") sortQuery = { price: -1 };
+    if (sort === "rating") sortQuery = { rating: -1 };
+
+    /* ================= PAGINATION ================= */
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [products, total] = await Promise.all([
+      Product.find(filter)
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(Number(limit)),
+      Product.countDocuments(filter),
+    ]);
 
     res.status(200).json({
       success: true,
       products,
+      pagination: {
+        total,
+        page: Number(page),
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("Get All Products Error:", error);
@@ -80,18 +77,23 @@ export const getAllProducts = async (req, res) => {
   }
 };
 
-
-
-
+/* =========================
+   GET PRODUCT BY ID (USER)
+========================= */
 export const getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({
+      _id: req.params.id,
+      isActive: true,
+    });
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
+
     res.status(200).json({
       success: true,
       product,
@@ -104,3 +106,4 @@ export const getProductById = async (req, res) => {
     });
   }
 };
+

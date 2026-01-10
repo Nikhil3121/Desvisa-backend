@@ -1,23 +1,28 @@
 import express from "express";
-import { addToCart, getCart, getProfile, getWishlist, loginUser, removeFromCart, signupUser, toggleWishlist } from "../controllers/usercontroller.js";
-import {protect} from "../middileware/isauthenticate.js";
-import { getProductById } from "../controllers/productController.js";
+import protect from "../middleware/isauthenticate.js";
+
+import {
+  getProfile,
+  toggleWishlist,
+  getWishlist,
+  addToCart,
+  removeFromCart,
+  getCart,
+} from "../controllers/usercontroller.js"; // ✅ FIXED NAME
 
 const router = express.Router();
 
-router.post("/signup", signupUser);
-router.post("/login",loginUser);
 
-// Protected route
+/* ================= PROFILE ================= */
 router.get("/profile", protect, getProfile);
 
+/* ================= WISHLIST ================= */
 router.post("/wishlist/:productId", protect, toggleWishlist);
 router.get("/wishlist", protect, getWishlist);
 
-/* 🛒 CART */
+/* ================= CART ================= */
 router.post("/cart", protect, addToCart);
 router.delete("/cart/:productId", protect, removeFromCart);
 router.get("/cart", protect, getCart);
-
 
 export default router;

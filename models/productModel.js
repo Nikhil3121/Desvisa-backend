@@ -6,11 +6,13 @@ const ProductSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      index: true,
     },
 
     description: {
       type: String,
       required: true,
+      trim: true,
     },
 
     price: {
@@ -19,11 +21,27 @@ const ProductSchema = new mongoose.Schema(
       min: 0,
     },
 
+    discountPrice: {
+      type: Number,
+      min: 0,
+      validate: {
+        validator: function (value) {
+          return value <= this.price;
+        },
+      },
+    },
+
     rating: {
       type: Number,
       default: 0,
       min: 0,
       max: 5,
+    },
+
+    totalReviews: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     category: {
@@ -36,23 +54,31 @@ const ProductSchema = new mongoose.Schema(
         "Shoes",
         "Accessories",
         "Sportswear",
-      ], // 🔥 category validation
+      ],
+      index: true,
     },
+
     supply: {
       type: Number,
       required: true,
-      min: 0, // 🚫 no negative stock
+      min: 0,
     },
 
-    // optional: image (future use)
-    image: {
-      type: String,
-      default: "",
+    images: [
+      {
+        type: String,
+      },
+    ],
+
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
     timestamps: true,
-    }
+  }
 );
 
-export const Product = mongoose.model("Product", ProductSchema);
+const Product = mongoose.model("Product", ProductSchema);
+export default Product;
