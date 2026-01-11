@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import admin from "../config/firebaseAdmin.js";
+import admin from "../config/firebaseadmin.js";
 import User from "../models/userModel.js";
 import Session from "../models/sessionmodel.js";
 import {
