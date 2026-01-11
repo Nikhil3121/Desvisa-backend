@@ -94,4 +94,5 @@ const hashToken = (token) =>
   }
 };
 
+
 export default firebaseAuth
