@@ -1,4 +1,4 @@
-import admin from "../config/firebaseAdmin.js";
+
 
 const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
