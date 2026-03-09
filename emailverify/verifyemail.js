@@ -1,25 +1,21 @@
-import nodemailer from "nodemailer";
-import 'dotenv/config';
-import { text } from "express";
+export const verifyEmail = async (req, res) => {
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
 
-export const verifyemail =(token, email)=>{
-const transporter = nodemailer.createTransport({
-    service: 'Gmail',
-    auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASS
-    }
-});
-     const mailconfiguration ={
-     from: process.env.MAIL_USER,
-     to: email,
-     subject: 'Email Verification for Ekart',
-     text: 'hi! there, you have recently visited our website ekart and entered your email id. please click on the link below to verify your email address http://localhost:3000/verifyemail/${token} thanks '
+  const user = await User.findOne({
+    emailVerificationToken: hashedToken,
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid token" });
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+
+  await user.save();
+
+  res.json({ message: "Email verified successfully" });
 };
-transporter.sendMail(mailconfiguration, function(error, info){
-    if (error) throw (error)
-     console.log('Email sent successfully: ');
-     console.log(info);
-});
-}
-

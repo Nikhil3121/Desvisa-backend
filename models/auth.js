@@ -1,56 +1,49 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
-const authSchema = new mongoose.Schema(
-  {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      unique: true,
-      index: true,
-    },
-
-    authProvider: {
-      type: String,
-      enum: ["firebase", "local"],
-      default: "firebase",
-      required: true,
-    },
-
-    firebaseUid: {
-      type: String,
-      index: true,
-      sparse: true,
-    },
-
-    isEmailVerified: {
-      type: Boolean,
-      default: false,
-    },
-
-    isPhoneVerified: {
-      type: Boolean,
-      default: false,
-    },
-
-    lastAuthAt: {
-      type: Date,
-    },
-
-    authVersion: {
-      type: Number,
-      default: 1,
-    },
-    firebaseUid: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: {
+    type: String,
+    unique: true,
+    lowercase: true,
+    required: true,
   },
-  {
-    timestamps: true,
-  }
-);
+  password: {
+    type: String,
+    required: true,
+    select: false,
+  },
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
+  verificationToken: String,
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+}, { timestamps: true });
 
-const Auth = mongoose.model("Auth", authSchema);
-export default Auth;
+/* Hash password */
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+  this.password = await bcrypt.hash(this.password, 12);
+});
+
+/* Match password */
+userSchema.methods.comparePassword = function (password) {
+  return bcrypt.compare(password, this.password);
+};
+
+/* Generate token */
+userSchema.methods.generateToken = function (fieldName) {
+  const token = crypto.randomBytes(32).toString("hex");
+
+  this[fieldName] = crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+
+  return token;
+};
+export default mongoose.model("User", userSchema);

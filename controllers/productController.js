@@ -1,4 +1,4 @@
-import upload from "../middleware/uploadMiddleware.js";
+
 import Product from "../models/productModel.js";
 
 

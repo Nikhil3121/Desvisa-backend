@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import Session from "../models/Session.js";
+import User from "../models/userModel.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -11,44 +12,57 @@ const hashToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
 /* =====================================================
-   REFRESH TOKEN (ROTATION + HASHED STORAGE)
+   🔁 REFRESH TOKEN (ROTATION + HASHED STORAGE)
 ===================================================== */
 export const refreshToken = async (req, res) => {
-  const { refreshToken } = req.body;
+  const { refreshToken: incomingRefreshToken } = req.body;
 
-  if (!refreshToken) {
+  if (!incomingRefreshToken) {
     return res.status(401).json({ message: "Refresh token required" });
   }
 
   try {
-    // 🔐 Verify refresh token signature
+    /* 🔐 Verify refresh token signature */
     const decoded = jwt.verify(
-      refreshToken,
+      incomingRefreshToken,
       process.env.JWT_REFRESH_SECRET
     );
 
-    // 🔍 Find valid session using HASHED token
+    /* 🔍 Find valid session */
     const session = await Session.findOne({
-      refreshTokenHash: hashToken(refreshToken),
+      refreshTokenHash: hashToken(incomingRefreshToken),
       isValid: true,
+      expiresAt: { $gt: new Date() },
     });
 
     if (!session) {
-      return res.status(401).json({ message: "Invalid or expired session" });
+      return res
+        .status(401)
+        .json({ message: "Invalid, expired, or reused refresh token" });
     }
 
-    // 🚫 Invalidate old session (rotation)
+    /* 👤 Verify user still exists */
+    const user = await User.findById(decoded.id);
+    if (!user || user.isBlocked || user.isDeleted) {
+      session.isValid = false;
+      session.revokedReason = "user_invalid";
+      await session.save();
+
+      return res.status(403).json({ message: "User not allowed" });
+    }
+
+    /* 🚫 Invalidate old session (rotation) */
     session.isValid = false;
-    session.revokedReason = "expired";
+    session.revokedReason = "rotated";
     await session.save();
 
-    // 🎫 Generate new tokens
-    const newRefreshToken = generateRefreshToken(decoded.id);
-    const accessToken = generateAccessToken(decoded.id);
+    /* 🎫 Generate new tokens */
+    const newAccessToken = generateAccessToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
 
-    // 🧾 Store new session
+    /* 🧾 Store new session */
     await Session.create({
-      user: decoded.id,
+      user: user._id,
       refreshTokenHash: hashToken(newRefreshToken),
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
@@ -58,10 +72,12 @@ export const refreshToken = async (req, res) => {
     });
 
     res.status(200).json({
-      accessToken,
+      accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     });
   } catch (error) {
-    res.status(401).json({ message: "Refresh token invalid or expired" });
+    return res.status(401).json({
+      message: "Refresh token invalid or expired",
+    });
   }
 };

@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 const userSchema = new mongoose.Schema(
   {
@@ -21,34 +23,37 @@ const userSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      unique: true,
-      sparse: true, // ✅ allows null but keeps unique
       index: true,
     },
 
+    /* ================= AUTH ================= */
     password: {
       type: String,
-      select: false, // ❗ Firebase users don’t need it
+      required: true,
+      select: false,
     },
 
     authProvider: {
       type: String,
-      enum: ["firebase", "local"],
-      default: "firebase",
+      enum: ["local"],
+      default: "local",
     },
 
-    role: {
-      type: String,
-      enum: ["user", "admin"],
-      default: "user",
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
     },
+
+    emailVerificationToken: String,
 
     resetPasswordToken: String,
     resetPasswordExpires: Date,
 
-    isPhoneVerified: {
-      type: Boolean,
-      default: false,
+    /* ================= ROLE ================= */
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
     },
 
     /* ================= WISHLIST ================= */
@@ -77,7 +82,7 @@ const userSchema = new mongoose.Schema(
       },
     ],
 
-    /* ================= PROFILE INFO ================= */
+    /* ================= PROFILE ================= */
     country: String,
     occupation: String,
 
@@ -98,6 +103,33 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+/* =====================================================
+   🔐 PASSWORD HASHING
+===================================================== */
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+/* =====================================================
+   🔍 COMPARE PASSWORD
+===================================================== */
+userSchema.methods.comparePassword = function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
+};
+
+/* =====================================================
+   🔑 GENERATE TOKEN (EMAIL / RESET)
+===================================================== */
+userSchema.methods.generateToken = function (fieldName) {
+  const token = crypto.randomBytes(32).toString("hex");
+
+  this[fieldName] = crypto.createHash("sha256").update(token).digest("hex");
+
+  return token;
+};
 
 const User = mongoose.model("User", userSchema);
 export default User;

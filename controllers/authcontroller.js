@@ -1,98 +1,136 @@
-import crypto from "crypto";
-import admin from "../config/firebaseadmin.js";
 import User from "../models/userModel.js";
-import Session from "../models/sessionmodel.js";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import sendEmail from "../utils/sendEmail.js";
 import {
-  generateAccessToken,
-  generateRefreshToken,
-} from "../utils/generateToken.js";
+  verifyEmailTemplate,
+  resetPasswordTemplate,
+} from "../utils/emailTemplate.js";
 
-/* ================= UTIL ================= */
-const hashToken = (token) =>
-  crypto.createHash("sha256").update(token).digest("hex");
+const createToken = (id) =>
+  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-/* =====================================================
-   FIREBASE AUTH (EMAIL / PHONE / GOOGLE)
-===================================================== */
- const firebaseAuth = async (req, res) => {
-  try {
-    const { idToken } = req.body;
+/* ================= SIGNUP ================= */
+export const signup = async (req, res) => {
+  const { name, email, password } = req.body;
 
-    if (!idToken) {
-      return res.status(400).json({ message: "Firebase token required" });
-    }
+  const userExists = await User.findOne({ email });
+  if (userExists)
+    return res.status(400).json({ message: "Email already exists" });
 
-    // 🔐 Verify Firebase ID token
-    const decoded = await admin.auth().verifyIdToken(idToken);
+  const user = await User.create({ name, email, password });
 
-    const {
-      uid,
-      email,
-      email_verified,
-      phone_number,
-      name,
-      firebase,
-    } = decoded;
+  const token = user.generateToken("emailVerificationToken");
+  await user.save({ validateBeforeSave: false });
 
-    // 🔍 Find user
-    let user = await User.findOne({ firebaseUid: uid });
+  const link = `${process.env.CLIENT_URL}/verify-email/${token}`;
 
-    // 🚫 Blocked user
-    if (user?.isBlocked) {
-      return res.status(403).json({ message: "Account is blocked" });
-    }
+  await sendEmail({
+    to: email,
+    subject: "Verify your email",
+    html: verifyEmailTemplate(name, link),
+  });
 
-    // 🆕 Create new user
-    if (!user) {
-      user = await User.create({
-        name: name || "User",
-        email: email || undefined,
-        phone: phone_number || undefined,
-        firebaseUid: uid,
-        authProvider: "firebase",
-        role: "user",
-        isEmailVerified: !!email_verified,
-        isPhoneVerified: !!phone_number,
-        lastLogin: new Date(),
-      });
-    } else {
-      user.lastLogin = new Date();
-      await user.save();
-    }
-
-    // 🎫 Generate tokens
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    // 🧾 Store session
-    await Session.create({
-      user: user._id,
-      refreshTokenHash: hashToken(refreshToken),
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-      deviceType: "web",
-      sessionType: "user",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    });
-
-    res.status(200).json({
-      success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        provider: user.authProvider,
-      },
-      accessToken,
-      refreshToken,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(401).json({ message: "Invalid Firebase token" });
-  }
+  res.status(201).json({
+    message: "Verification email sent",
+  });
 };
 
+/* ================= VERIFY EMAIL ================= */
+export const verifyEmail = async (req, res) => {
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
 
-export default firebaseAuth
+  const user = await User.findOne({
+    emailVerificationToken: hashedToken,
+  });
+
+  if (!user)
+    return res.status(400).json({ message: "Invalid or expired token" });
+
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+
+  await user.save();
+
+  res.json({ message: "Email verified successfully" });
+};
+
+/* ================= LOGIN ================= */
+export const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await User.findOne({ email }).select("+password");
+  if (!user || !(await user.comparePassword(password)))
+    return res.status(401).json({ message: "Invalid credentials" });
+
+  if (!user.isEmailVerified)
+    return res.status(403).json({ message: "Please verify your email first" });
+
+  const token = createToken(user._id);
+
+  user.password = undefined; // 🔐 hide password
+
+  res.json({ token, user });
+};
+
+/* ================= FORGOT PASSWORD ================= */
+export const forgotPassword = async (req, res) => {
+  const user = await User.findOne({ email: req.body.email });
+  if (!user)
+    return res.status(404).json({ message: "User not found" });
+
+  const token = user.generateToken("resetPasswordToken");
+  user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+
+  await user.save({ validateBeforeSave: false });
+
+  const link = `${process.env.CLIENT_URL}/reset-password/${token}`;
+
+  await sendEmail({
+    to: user.email,
+    subject: "Reset Password",
+    html: resetPasswordTemplate(link),
+  });
+
+  res.json({ message: "Password reset email sent" });
+};
+
+/* ================= RESET PASSWORD ================= */
+export const resetPassword = async (req, res) => {
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
+
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() },
+  });
+
+  if (!user)
+    return res.status(400).json({ message: "Token expired or invalid" });
+
+  user.password = req.body.password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+
+  await user.save();
+
+  res.json({ message: "Password updated successfully" });
+};
+
+/* ================= CHANGE PASSWORD ================= */
+export const changePassword = async (req, res) => {
+  const user = await User.findById(req.user.id).select("+password");
+
+  if (!(await user.comparePassword(req.body.currentPassword)))
+    return res.status(401).json({ message: "Wrong current password" });
+
+  user.password = req.body.newPassword;
+  await user.save();
+
+  res.json({ message: "Password changed successfully" });
+};
